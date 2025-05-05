@@ -161,8 +161,3 @@ if __name__ == '__main__':
     config_args.test_img_dir = args.test_img_dir
     main(config_args)
 
-
-
-if __name__ == '__main__':
-    config_args, unparsed_args = get_config()
-    main(config_args)
