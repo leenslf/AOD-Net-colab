@@ -1,3 +1,5 @@
+data/
+
 # My Setting
 .idea
 .DS_Store
@@ -105,3 +107,31 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# 🐍 Python
+__pycache__/
+*.py[cod]
+*.so
+*.ipynb_checkpoints
+
+# 🧪 Experiment outputs
+logs/
+samples/
+models/
+test_images/
+
+# 🧙 Virtual environments
+venv/
+venv310/
+.venv/
+
+# 💻 OS trash
+.DS_Store
+Thumbs.db
+
+# 📦 Editor stuff
+.vscode/
+.idea/
+*.swp
+
+# 🚫 Dataset (assumes you don’t want this in Git)

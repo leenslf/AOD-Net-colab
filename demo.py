@@ -1,12 +1,7 @@
 import os
 import glob
 import torch
-import torch.backends.cudnn
-import torch.nn
-import torch.nn.parallel
-import torch.optim
-import torch.utils.data
-import torchvision
+from torchvision import transforms, utils
 from PIL import Image
 from utils import logger
 from config import get_config
@@ -15,49 +10,65 @@ from model import AODnet
 
 @logger
 def make_test_data(cfg, img_path_list, device):
-    data_transform = torchvision.transforms.Compose([
-        torchvision.transforms.Resize([480, 640]),
-        torchvision.transforms.ToTensor()
+    data_transform = transforms.Compose([
+        transforms.Resize([480, 640]),
+        transforms.ToTensor()
     ])
     imgs = []
     for img_path in img_path_list:
-        x = data_transform(Image.open(img_path)).unsqueeze(0)
-        x = x.to(device)
-        imgs.append(x)
+        try:
+            image = Image.open(img_path).convert("RGB")
+            x = data_transform(image).unsqueeze(0).to(device)
+            imgs.append(x)
+        except Exception as e:
+            print(f"[⚠️] Failed to load image: {img_path} — {e}")
     return imgs
 
 
 @logger
 def load_pretrain_network(cfg, device):
+    model_path = os.path.join(cfg.model_dir, cfg.net_name, cfg.ckpt)
+    print(f"🔄 Loading model from: {model_path}")
+    
     net = AODnet().to(device)
-    net.load_state_dict(torch.load(os.path.join(cfg.model_dir, cfg.net_name, cfg.ckpt))['state_dict'])
+    ckpt = torch.load(model_path, map_location=device)
+    
+    # Compatibility: if it's just the state_dict or a full checkpoint
+    state_dict = ckpt['state_dict'] if 'state_dict' in ckpt else ckpt
+    net.load_state_dict(state_dict)
+    
     return net
 
 
 def main(cfg):
-    # -------------------------------------------------------------------
-    # basic config
     print(cfg)
     if cfg.gpu > -1:
         os.environ['CUDA_VISIBLE_DEVICES'] = str(cfg.gpu)
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_gpu else 'cpu')
+
     # -------------------------------------------------------------------
-    # load data
-    test_file_path = glob.glob('/home/wc/workspace/AOD-Net.pytorch/test_images/*.jpg')
+    # Load test images
+    test_file_path = glob.glob('./test_images/*.jpg')
     test_images = make_test_data(cfg, test_file_path, device)
+
     # -------------------------------------------------------------------
-    # load network
+    # Load network
     network = load_pretrain_network(cfg, device)
+
     # -------------------------------------------------------------------
-    # set network weights
-    # -------------------------------------------------------------------
-    # start train
-    print('Start eval')
+    # Run inference
+    print('🚀 Starting evaluation...')
     network.eval()
+    os.makedirs("results", exist_ok=True)
+
     for idx, im in enumerate(test_images):
-        dehaze_image = network(im)
-        print(test_file_path[idx])
-        torchvision.utils.save_image(torch.cat((im, dehaze_image), 0), "results/" + test_file_path[idx].split("/")[-1])
+        with torch.no_grad():
+            dehaze_image = network(im)
+        save_path = os.path.join("results", os.path.basename(test_file_path[idx]))
+        utils.save_image(torch.cat((im, dehaze_image), 0), save_path)
+        print(f"✅ Saved: {save_path}")
+
+    print("🎉 Done.")
 
 
 if __name__ == '__main__':

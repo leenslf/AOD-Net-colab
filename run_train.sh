@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 
 python train.py --epochs 10 \
-                --net_name aod-xavier \
+                --net_name aod-local \
                 --lr 1e-4 \
-                --use_gpu true \
-                --gpu 3 \
-                --ori_data_path /home/wc/data/Haze/train/ori/ \
-                --haze_data_path /home/wc/data/Haze/train/haze/ \
-                --val_ori_data_path /home/wc/data/Haze/val/ori/ \
-                --val_haze_data_path /home/wc/data/Haze/val/haze/ \
-                --num_workers 2 \
-                --batch_size 8 \
-                --val_batch_size 16 \
-                --print_gap 500 \
-                --model_dir /home/wc/workspace/AOD-Net.pytorch/models \
-                --log_dir /home/wc/workspace/AOD-Net.pytorch/logs \
-                --sample_output_folder /home/wc/workspace/AOD-Net.pytorch/samples
+                --use_gpu false \
+                --gpu -1 \
+                --ori_data_path ./data/train/ori/ \
+                --haze_data_path ./data/train/haze/ \
+                --val_ori_data_path ./data/train/ori/ \
+                --val_haze_data_path ./data/train/haze/ \
+                --num_workers 0 \
+                --batch_size 4 \
+                --val_batch_size 4 \
+                --print_gap 10 \
+                --model_dir ./models \
+                --log_dir ./logs \
+                --sample_output_folder ./samples
