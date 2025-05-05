@@ -83,8 +83,6 @@ from PIL import Image
 from utils import logger
 from config import get_config
 from model import AODnet
-import argparse
-
 
 @logger
 def make_test_data(cfg, img_path_list, device):
@@ -97,66 +95,68 @@ def make_test_data(cfg, img_path_list, device):
         try:
             image = Image.open(img_path).convert("RGB")
             x = data_transform(image).unsqueeze(0).to(device)
-            imgs.append(x)
+            imgs.append((x, img_path))
         except Exception as e:
             print(f"[⚠️] Failed to load image: {img_path} — {e}")
     return imgs
 
-
 @logger
 def load_pretrain_network(cfg, device):
-    model_path = os.path.join(cfg.model_dir, cfg.net_name, cfg.ckpt) \
-        if cfg.net_name else os.path.join(cfg.model_dir, cfg.ckpt)
+    model_path = os.path.join(cfg.model_dir, cfg.ckpt)
     print(f"🔄 Loading model from: {model_path}")
 
     net = AODnet().to(device)
     ckpt = torch.load(model_path, map_location=device)
 
+    # Compatibility: support either raw state_dict or full checkpoint
     state_dict = ckpt['state_dict'] if 'state_dict' in ckpt else ckpt
     net.load_state_dict(state_dict)
-
     return net
-
 
 def main(cfg):
     print(cfg)
+
     if cfg.gpu > -1:
         os.environ['CUDA_VISIBLE_DEVICES'] = str(cfg.gpu)
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_gpu else 'cpu')
 
-    # -------------------------------------------------------------------
-    # Load test images
-    test_file_path = glob.glob(os.path.join(cfg.test_img_dir, '*.jpg'))
+    # Load test images (supports .jpg, .jpeg, .png)
+    test_file_path = glob.glob(os.path.join(cfg.test_img_dir, '*.jpg')) + \
+                     glob.glob(os.path.join(cfg.test_img_dir, '*.jpeg')) + \
+                     glob.glob(os.path.join(cfg.test_img_dir, '*.png'))
+
     test_images = make_test_data(cfg, test_file_path, device)
 
-    # -------------------------------------------------------------------
-    # Load network
+    # Load model
     network = load_pretrain_network(cfg, device)
 
-    # -------------------------------------------------------------------
-    # Run inference
+    # Inference
     print('🚀 Starting evaluation...')
     os.makedirs(cfg.sample_output_folder, exist_ok=True)
     network.eval()
 
-    for idx, im in enumerate(test_images):
+    for idx, (im, path) in enumerate(test_images):
         with torch.no_grad():
             dehaze_image = network(im)
-        save_path = os.path.join(cfg.sample_output_folder, os.path.basename(test_file_path[idx]))
+
+        filename = os.path.basename(path)
+        save_path = os.path.join(cfg.sample_output_folder, filename)
         utils.save_image(torch.cat((im, dehaze_image), 0), save_path)
         print(f"✅ Saved: {save_path}")
 
     print("🎉 Done.")
 
-
 if __name__ == '__main__':
-    # 🧠 Load default config
     config_args, _ = get_config()
 
-    # 🧪 Parse additional args for test-time flexibility
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--test_img_dir', type=str, default='./test_images')
-    args, _ = parser.parse_known_args()
+    # Inject custom test path if provided via CLI
+    import sys
+    for i, arg in enumerate(sys.argv):
+        if arg == '--test_img_dir' and i + 1 < len(sys.argv):
+            config_args.test_img_dir = sys.argv[i + 1]
+
+    main(config_args)
+
 
     config_args.test_img_dir = args.test_img_dir
     main(config_args)
