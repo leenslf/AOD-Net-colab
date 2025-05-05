@@ -83,6 +83,7 @@ from PIL import Image
 from utils import logger
 from config import get_config
 from model import AODnet
+import argparse
 
 
 @logger
@@ -104,16 +105,16 @@ def make_test_data(cfg, img_path_list, device):
 
 @logger
 def load_pretrain_network(cfg, device):
-    model_path = os.path.join(cfg.model_dir, cfg.ckpt)
+    model_path = os.path.join(cfg.model_dir, cfg.net_name, cfg.ckpt) \
+        if cfg.net_name else os.path.join(cfg.model_dir, cfg.ckpt)
     print(f"🔄 Loading model from: {model_path}")
-    
+
     net = AODnet().to(device)
     ckpt = torch.load(model_path, map_location=device)
-    
-    # Compatibility: if it's just the state_dict or a full checkpoint
+
     state_dict = ckpt['state_dict'] if 'state_dict' in ckpt else ckpt
     net.load_state_dict(state_dict)
-    
+
     return net
 
 
@@ -146,6 +147,20 @@ def main(cfg):
         print(f"✅ Saved: {save_path}")
 
     print("🎉 Done.")
+
+
+if __name__ == '__main__':
+    # 🧠 Load default config
+    config_args, _ = get_config()
+
+    # 🧪 Parse additional args for test-time flexibility
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--test_img_dir', type=str, default='./test_images')
+    args, _ = parser.parse_known_args()
+
+    config_args.test_img_dir = args.test_img_dir
+    main(config_args)
+
 
 
 if __name__ == '__main__':
