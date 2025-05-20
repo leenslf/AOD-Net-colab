@@ -75,7 +75,9 @@
 #     config_args, unparsed_args = get_config()
 #     main(config_args)
 
+#!/usr/bin/env python3
 import os
+import sys
 import glob
 import torch
 from torchvision import transforms, utils
@@ -93,9 +95,9 @@ def make_test_data(cfg, img_path_list, device):
     imgs = []
     for img_path in img_path_list:
         try:
-            image = Image.open(img_path).convert("RGB")
-            x = data_transform(image).unsqueeze(0).to(device)
-            imgs.append((x, img_path))
+            img = Image.open(img_path).convert("RGB")
+            tensor = data_transform(img).unsqueeze(0).to(device)
+            imgs.append((tensor, img_path))
         except Exception as e:
             print(f"[⚠️] Failed to load image: {img_path} — {e}")
     return imgs
@@ -104,58 +106,48 @@ def make_test_data(cfg, img_path_list, device):
 def load_pretrain_network(cfg, device):
     model_path = os.path.join(cfg.model_dir, cfg.ckpt)
     print(f"🔄 Loading model from: {model_path}")
-
     net = AODnet().to(device)
     ckpt = torch.load(model_path, map_location=device)
-
-    # Compatibility: support either raw state_dict or full checkpoint
-    state_dict = ckpt['state_dict'] if 'state_dict' in ckpt else ckpt
+    state_dict = ckpt.get('state_dict', ckpt)
     net.load_state_dict(state_dict)
     return net
 
 def main(cfg):
     print(cfg)
-
     if cfg.gpu > -1:
         os.environ['CUDA_VISIBLE_DEVICES'] = str(cfg.gpu)
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_gpu else 'cpu')
 
-    # Load test images (supports .jpg, .jpeg, .png)
-    test_file_path = glob.glob(os.path.join(cfg.test_img_dir, '*.jpg')) + \
-                     glob.glob(os.path.join(cfg.test_img_dir, '*.jpeg')) + \
-                     glob.glob(os.path.join(cfg.test_img_dir, '*.png'))
+    # gather files
+    pattern = os.path.join(cfg.test_img_dir, '*')
+    test_paths = [p for p in glob.glob(pattern) if p.lower().endswith(('.jpg','.jpeg','.png'))]
+    test_data  = make_test_data(cfg, test_paths, device)
 
-    test_images = make_test_data(cfg, test_file_path, device)
-
-    # Load model
-    network = load_pretrain_network(cfg, device)
-
-    # Inference
-    print('🚀 Starting evaluation...')
+    # load and eval
+    net = load_pretrain_network(cfg, device)
+    net.eval()
     os.makedirs(cfg.sample_output_folder, exist_ok=True)
-    network.eval()
+    print('🚀 Running inference...')
 
-    for idx, (im, path) in enumerate(test_images):
+    for tensor, path in test_data:
         with torch.no_grad():
-            dehaze_image = network(im)
+            out = net(tensor)
+        fname = os.path.basename(path)
+        save_path = os.path.join(cfg.sample_output_folder, fname)
+        # only save the dehazed output, one image per file
+        utils.save_image(out, save_path, nrow=1)
+        print(f"✅ Saved dehazed: {save_path}")
 
-        filename = os.path.basename(path)
-        save_path = os.path.join(cfg.sample_output_folder, filename)
-        utils.save_image(torch.cat((im, dehaze_image), 0), save_path)
-        print(f"✅ Saved: {save_path}")
-
-    print("🎉 Done.")
+    print("🎉 All done!")
 
 if __name__ == '__main__':
-    config_args, _ = get_config()
+    cfg, _ = get_config()
+    # override via CLI: --test_img_dir /my/folder
+    for i, a in enumerate(sys.argv):
+        if a == '--test_img_dir' and i+1 < len(sys.argv):
+            cfg.test_img_dir = sys.argv[i+1]
+    main(cfg)
 
-    # Inject custom test path if provided via CLI
-    import sys
-    for i, arg in enumerate(sys.argv):
-        if arg == '--test_img_dir' and i + 1 < len(sys.argv):
-            config_args.test_img_dir = sys.argv[i + 1]
-
-    main(config_args)
 
 
     config_args.test_img_dir = args.test_img_dir
