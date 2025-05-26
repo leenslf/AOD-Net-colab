@@ -9,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter  # ✅ Modern TensorBoard
 from utils import logger, weight_init
 from config import get_config
 from model import AODnet
-from data import HazeDataset  # ✅ Now uses random hazy variant per original
+from datafine import HazeDataset  # ✅ Now uses random hazy variant per original
 
 
 @logger
