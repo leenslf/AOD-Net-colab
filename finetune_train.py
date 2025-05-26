@@ -9,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 from utils import logger, weight_init
 from config import get_config
 from model import AODnet
-from data import HazeDataset
+from datafine import HazeDataset
 
 """
 In this fine-tuning script, we are adapting a previously trained AOD-Net dehazing model to perform structure-only 
