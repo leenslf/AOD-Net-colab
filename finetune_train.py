@@ -11,6 +11,15 @@ from config import get_config
 from model import AODnet
 from data import HazeDataset
 
+"""
+In this fine-tuning script, we are adapting a previously trained AOD-Net dehazing model to perform structure-only 
+enhancement, specifically targeting underwater haze without altering the color distribution. Unlike the original 
+training script, which uses RGB-based loss (MSE across all channels), this version computes loss only on the grayscale 
+luminance channel, ensuring the model learns to restore contrast, edge clarity, and visibility while preserving 
+original underwater colors. This is crucial for cases where color correction is not desired or should be handled 
+separately. The script also supports automatic checkpoint resumption and logs both grayscale and RGB outputs 
+for monitoring the effect of the fine-tuning.
+"""
 
 @logger
 def load_data(cfg):
