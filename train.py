@@ -4,12 +4,12 @@ from torch import nn, optim
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.utils import make_grid, save_image
-from torch.utils.tensorboard import SummaryWriter  # ✅ Modern TensorBoard
+from torch.utils.tensorboard import SummaryWriter
 
 from utils import logger, weight_init
 from config import get_config
 from model import AODnet
-from data import HazeDataset  # ✅ Now uses random hazy variant per original
+from data import HazeDataset
 
 
 @logger
@@ -20,11 +20,11 @@ def load_data(cfg):
     ])
     train_haze_dataset = HazeDataset(cfg.ori_data_path, cfg.haze_data_path, data_transform)
     train_loader = DataLoader(train_haze_dataset, batch_size=cfg.batch_size, shuffle=True,
-                              num_workers=0, drop_last=True, pin_memory=False)  # ⛔ Safer on macOS
+                              num_workers=cfg.num_workers, drop_last=True, pin_memory=False)
 
     val_haze_dataset = HazeDataset(cfg.val_ori_data_path, cfg.val_haze_data_path, data_transform)
     val_loader = DataLoader(val_haze_dataset, batch_size=cfg.val_batch_size, shuffle=False,
-                            num_workers=0, drop_last=True, pin_memory=False)
+                            num_workers=cfg.num_workers, drop_last=True, pin_memory=False)
 
     return train_loader, len(train_loader), val_loader, len(val_loader)
 
@@ -66,31 +66,40 @@ def main(cfg):
         os.environ['CUDA_VISIBLE_DEVICES'] = str(cfg.gpu)
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_gpu else 'cpu')
 
-    # Logging + setup
     summary = load_summaries(cfg)
     train_loader, train_number, val_loader, val_number = load_data(cfg)
     criterion = loss_func()
     network = load_network(device)
     optimizer = load_optimizer(network, cfg)
 
-    # 🔄 Resume if possible
+    # 🔁 Resume from checkpoint if specified
     start_epoch = 0
-    latest_ckpt = None
-    model_dir = os.path.join(cfg.model_dir, cfg.net_name)
-    if os.path.exists(model_dir):
-        ckpts = [f for f in os.listdir(model_dir) if f.endswith(".pkl")]
-        if ckpts:
-            latest_ckpt = sorted(ckpts, key=lambda x: int(x.split('_')[-1].split('.')[0]))[-1]
-            print(f"⚡️ Resuming from checkpoint: {latest_ckpt}")
-            state = torch.load(os.path.join(model_dir, latest_ckpt))
-            network.load_state_dict(state['state_dict'])
+    if cfg.resume_from and os.path.exists(cfg.resume_from):
+        print(f"⚡️ Resuming from checkpoint: {cfg.resume_from}")
+        state = torch.load(cfg.resume_from, map_location=device)
+        network.load_state_dict(state['state_dict'])
+        if not cfg.reset_optim:
             optimizer.load_state_dict(state['optimizer'])
-            start_epoch = state['epoch'] + 1
+        start_epoch = state['epoch'] + 1
+    else:
+        # Fallback: try loading from model_dir
+        model_dir = os.path.join(cfg.model_dir, cfg.net_name)
+        if os.path.exists(model_dir):
+            ckpts = [f for f in os.listdir(model_dir) if f.endswith(".pkl")]
+            if ckpts:
+                latest_ckpt = sorted(ckpts, key=lambda x: int(x.split('_')[-1].split('.')[0]))[-1]
+                resume_path = os.path.join(model_dir, latest_ckpt)
+                print(f"⚡️ Auto-resuming from: {resume_path}")
+                state = torch.load(resume_path, map_location=device)
+                network.load_state_dict(state['state_dict'])
+                if not cfg.reset_optim:
+                    optimizer.load_state_dict(state['optimizer'])
+                start_epoch = state['epoch'] + 1
 
-    # Start training
+    # 🚀 Start training
     print('🚀 Start training')
     network.train()
-    for epoch in range(start_epoch, cfg.epochs):
+    for epoch in range(start_epoch, start_epoch + cfg.epochs):
         for step, (ori_image, haze_image) in enumerate(train_loader):
             count = epoch * train_number + (step + 1)
             ori_image, haze_image = ori_image.to(device), haze_image.to(device)
@@ -109,11 +118,11 @@ def main(cfg):
                 summary.add_image('Haze_Images', make_grid(haze_image[:4].data, normalize=True), count)
                 summary.add_image('Origin_Images', make_grid(ori_image[:4].data, normalize=True), count)
 
-            print(f"Epoch: {epoch+1}/{cfg.epochs} | Step: {step+1}/{train_number} | "
+            print(f"Epoch: {epoch+1} | Step: {step+1}/{train_number} | "
                   f"LR: {optimizer.param_groups[0]['lr']:.6f} | Loss: {loss.item():.6f}")
 
-        # Validation image preview (10 examples max)
-        print(f"Epoch: {epoch+1}/{cfg.epochs} | Saving validation outputs")
+        # 🔍 Validation preview
+        print(f"Epoch {epoch+1} complete — saving validation results")
         network.eval()
         os.makedirs(cfg.sample_output_folder, exist_ok=True)
         with torch.no_grad():
@@ -127,7 +136,7 @@ def main(cfg):
                 save_image(grid, save_path)
         network.train()
 
-        # Save model
+        # 💾 Save checkpoint
         save_model(epoch, cfg.model_dir, network, optimizer, cfg.net_name)
 
     summary.close()
