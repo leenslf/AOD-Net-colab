@@ -1,62 +1,52 @@
 import os
-import torch
 import random
 from PIL import Image, UnidentifiedImageError
 from torch.utils.data import Dataset
-import glob
 
 
 class HazeDataset(Dataset):
-    def __init__(self, ori_root, haze_root, transforms=None):
+    def __init__(self, ori_root, haze_root, transforms=None, verbose=False):
+        """
+        Dataset for paired clean/hazy images with matching filenames.
+        :param ori_root: Path to ground truth (clean) images
+        :param haze_root: Path to hazy images
+        :param transforms: Optional image transforms
+        :param verbose: Whether to print per-sample info (default: False)
+        """
         self.ori_root = ori_root
         self.haze_root = haze_root
         self.transforms = transforms
+        self.verbose = verbose
 
-        self.matching_dict = {}      # Maps original file name → [hazy variants]
-        self.ori_image_list = []     # List of original image full paths
+        self.image_filenames = sorted([
+            f for f in os.listdir(haze_root)
+            if f.lower().endswith(('.jpg', '.png')) and os.path.exists(os.path.join(ori_root, f))
+        ])
 
-        self.build_pair_dict()
-        print("✅ Total unique original images:", len(self.ori_image_list))
+        if not self.image_filenames:
+            raise RuntimeError(f"❌ No matching image pairs found in {haze_root} and {ori_root}")
 
-    def build_pair_dict(self):
-        haze_image_list = glob.glob(os.path.join(self.haze_root, '*.jpg'))
-
-        for haze_path in haze_image_list:
-            filename = os.path.basename(haze_path)
-            key = "_".join(filename.split("_")[:2]) + ".jpg"  # e.g., NYU2_999.jpg
-            clean_path = os.path.join(self.ori_root, key)
-
-            if os.path.exists(clean_path):
-                if key not in self.matching_dict:
-                    self.matching_dict[key] = []
-                    self.ori_image_list.append(clean_path)
-                self.matching_dict[key].append(haze_path)
-
-        random.shuffle(self.ori_image_list)
+        print(f"✅ Matched image pairs: {len(self.image_filenames)}")
 
     def __len__(self):
-        return len(self.ori_image_list)
+        return len(self.image_filenames)
 
     def __getitem__(self, idx):
-        ori_image_path = self.ori_image_list[idx]
-        ori_filename = os.path.basename(ori_image_path)
-        hazy_candidates = self.matching_dict.get(ori_filename, [])
-
-        if not hazy_candidates:
-            raise ValueError(f"No hazy images found for: {ori_filename}")
-
-        haze_image_path = random.choice(hazy_candidates)
-
-        print(f"\n🔍 Index {idx}")
-        print(f"   - Ori image : {ori_image_path}")
-        print(f"   - Haze image: {haze_image_path}")
+        filename = self.image_filenames[idx]
+        ori_path = os.path.join(self.ori_root, filename)
+        haze_path = os.path.join(self.haze_root, filename)
 
         try:
-            ori_image = Image.open(ori_image_path).convert("RGB")
-            haze_image = Image.open(haze_image_path).convert("RGB")
+            ori_image = Image.open(ori_path).convert("RGB")
+            haze_image = Image.open(haze_path).convert("RGB")
         except (OSError, UnidentifiedImageError) as e:
-            print(f"❌ Skipping corrupted image at index {idx}: {e}")
+            print(f"❌ Skipping corrupted image: {filename} — {e}")
             return self.__getitem__((idx + 1) % len(self))
+
+        if self.verbose:
+            print(f"\n🔍 Index {idx}")
+            print(f"   - Ori image : {ori_path}")
+            print(f"   - Haze image: {haze_path}")
 
         if self.transforms:
             ori_image = self.transforms(ori_image)
@@ -68,16 +58,16 @@ class HazeDataset(Dataset):
 if __name__ == "__main__":
     from torchvision import transforms
 
-    ori_dir = "./data/train/ori"
-    haze_dir = "./data/train/haze"
+    ori_dir = "./data/train/reference"
+    haze_dir = "./data/train/raw"
 
     transform_fn = transforms.Compose([
         transforms.Resize((256, 256)),
         transforms.ToTensor()
     ])
 
-    dataset = HazeDataset(ori_dir, haze_dir, transforms=transform_fn)
+    dataset = HazeDataset(ori_dir, haze_dir, transforms=transform_fn, verbose=True)
 
-    # Load a few samples for testing
     for i in range(10):
         ori_img, haze_img = dataset[i]
+        print(f"[{i}] Shapes — Ori: {ori_img.shape}, Haze: {haze_img.shape}")
